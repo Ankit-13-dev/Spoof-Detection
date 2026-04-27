@@ -2,11 +2,7 @@
 app/auth.py
 ─────────────────────────────────────────────────────────
 JWT-based authentication helpers for FastAPI.
-
-Environment variables (optional — defaults used if not set):
-  SECRET_KEY : any long random string (change in production!)
-  ALGORITHM  : HS256 (default)
-  TOKEN_EXPIRE_MINUTES : 60 (default)
+Uses Argon2 (no 72-byte password limit)
 """
 
 import os
@@ -22,15 +18,22 @@ from sqlalchemy.orm import Session
 from app.database import User, get_db
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_THIS_IN_PRODUCTION_please_use_a_long_random_string")
-ALGORITHM  = os.getenv("ALGORITHM", "HS256")
-TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "CHANGE_THIS_IN_PRODUCTION_please_use_a_long_random_string"
+)
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))
 
-# ── Crypto ─────────────────────────────────────────────────────────────────────
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# ── Crypto (🔥 SWITCHED TO ARGON2) ─────────────────────────────────────────────
+pwd_context = CryptContext(
+    schemes=["argon2"],   # 👈 IMPORTANT CHANGE
+    deprecated="auto"
+)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
-
+# ── Password Hashing ───────────────────────────────────────────────────────────
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -38,7 +41,7 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-
+# ── JWT ────────────────────────────────────────────────────────────────────────
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + (
@@ -49,7 +52,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def decode_access_token(token: str) -> Optional[str]:
-    """Returns username (sub) from token, or None if invalid."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("sub")
@@ -57,21 +59,26 @@ def decode_access_token(token: str) -> Optional[str]:
         return None
 
 
+# ── Current User Dependency ─────────────────────────────────────────────────────
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    """FastAPI dependency — returns the current authenticated user or raises 401."""
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
     username = decode_access_token(token)
+
     if username is None:
         raise credentials_exception
 
     user = db.query(User).filter(User.username == username).first()
+
     if user is None or not user.is_active:
         raise credentials_exception
+
     return user

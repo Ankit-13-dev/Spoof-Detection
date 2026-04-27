@@ -1151,8 +1151,10 @@
 
         async function doLiveAnalysis() {
             if (cameraPaused) return;
+
             var frame = captureFrame('verify-video');
             if (!frame) return;
+
             try {
                 var data = await apiFetch('/api/analyze-frame', {
                     method: 'POST',
@@ -1160,10 +1162,18 @@
                         frame: frame
                     })
                 });
-                updateSpoofUI(data);
-            } catch (e) { /* silent fail during live polling */ }
-        }
 
+                updateSpoofUI(data);
+
+            } catch (e) {
+                console.error("❌ Live analysis error:", e.message);
+
+                // 🔥 STOP SPAMMING REQUESTS
+                stopLiveAnalysis();
+
+                toast("Backend error: " + e.message, "error");
+            }
+        }
         // FIX 2: all ?? replaced with explicit null/undefined checks
         function updateSpoofUI(data) {
             var r = data.spoof_result || {};
@@ -1387,18 +1397,40 @@
         // ═══════════════════════════════════════════════════════
         async function apiFetch(path, options) {
             if (!options) options = {};
+
             var headers = {
                 'Content-Type': 'application/json'
             };
-            if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
 
-            var resp = await fetch(API + path, {
-                method: options.method || 'GET',
-                body: options.body || undefined,
-                headers: headers
-            });
-            var data = await resp.json();
-            if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+            if (authToken) {
+                headers['Authorization'] = 'Bearer ' + authToken;
+            }
+
+            let resp;
+            try {
+                resp = await fetch(API + path, {
+                    method: options.method || 'GET',
+                    body: options.body || undefined,
+                    headers: headers
+                });
+            } catch (networkError) {
+                throw new Error("Server not reachable");
+            }
+
+            let text = await resp.text();
+
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                console.error("❌ Non-JSON response:", text);
+                throw new Error(text || "Invalid server response");
+            }
+
+            if (!resp.ok) {
+                throw new Error(data.detail || ("HTTP " + resp.status));
+            }
+
             return data;
         }
 

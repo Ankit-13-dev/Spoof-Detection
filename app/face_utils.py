@@ -3,6 +3,10 @@ app/face_utils.py
 ─────────────────────────────────────────────────────────
 Face embedding extraction and matching using DeepFace (Facenet model).
 
+Fixes applied:
+  - list[np.ndarray] type hint is Python 3.10+ only — replaced with
+    List[np.ndarray] from typing (works on Python 3.8+)
+
 Why DeepFace:
   • Works on Windows without compiling dlib
   • Facenet gives 128-dim embeddings with good accuracy
@@ -10,11 +14,12 @@ Why DeepFace:
 
 Flow:
   Enrollment  : extract_embedding(image) → numpy array → store as list in DB
-  Verification: match_embedding(query, stored_list) → cosine distance → compare with threshold
+  Verification: match_embedding(query, stored_list) → cosine distance → compare threshold
 """
 
 import cv2
 import numpy as np
+from typing import List   # ← use typing.List for Python 3.8/3.9 compatibility
 
 
 class FaceUtils:
@@ -23,9 +28,9 @@ class FaceUtils:
     Model is loaded lazily on first use.
     """
 
-    MODEL_NAME = "Facenet"          # 128-dim, fast, accurate
-    DETECTOR   = "opencv"           # retinaface or mtcnn for higher accuracy
-    #                                 opencv is fastest and most compatible
+    MODEL_NAME = "Facenet"    # 128-dim, fast, accurate
+    DETECTOR   = "opencv"     # retinaface or mtcnn for higher accuracy;
+    #                           opencv is fastest and most compatible
 
     def extract_embedding(self, frame_bgr: np.ndarray) -> np.ndarray:
         """
@@ -63,7 +68,6 @@ class FaceUtils:
 
         # result is a list of dicts; take the highest-confidence face
         if isinstance(result, list):
-            # sort by face confidence if available
             result = result[0]
 
         embedding = np.array(result["embedding"], dtype=np.float32)
@@ -78,16 +82,16 @@ class FaceUtils:
     def match_embedding(
         self,
         query: np.ndarray,
-        stored: list[np.ndarray],
+        stored: List[np.ndarray],      # ← was list[...] (3.10+ only), now List[...]
         aggregation: str = "min",
     ) -> float:
         """
-        Compute the best cosine distance between query and a list of stored embeddings.
+        Compute the best cosine distance between query and stored embeddings.
 
         Args:
-            query   : (128,) normalized embedding of the new face
-            stored  : list of (128,) normalized embeddings from enrollment
-            aggregation: "min" uses the best match, "mean" uses average
+            query       : (128,) normalized embedding of the new face
+            stored      : list of (128,) normalized embeddings from enrollment
+            aggregation : "min" uses the best match, "mean" uses average
 
         Returns:
             float: cosine distance in [0, 2].
@@ -98,29 +102,25 @@ class FaceUtils:
 
         distances = []
         for emb in stored:
-            emb = np.array(emb, dtype=np.float32)
+            emb  = np.array(emb, dtype=np.float32)
             norm = np.linalg.norm(emb)
             if norm > 1e-8:
                 emb = emb / norm
-            # Cosine distance = 1 - cosine_similarity
-            cos_sim = float(np.dot(query, emb))
+            cos_sim  = float(np.dot(query, emb))
             cos_dist = 1.0 - cos_sim
             distances.append(cos_dist)
 
-        if aggregation == "min":
-            return min(distances)
-        elif aggregation == "mean":
+        if aggregation == "mean":
             return float(np.mean(distances))
-        else:
-            return min(distances)
+        return min(distances)   # default: "min"
 
     @staticmethod
     def distance_to_confidence(distance: float, threshold: float = 0.40) -> float:
         """
-        Convert a cosine distance to a human-readable match confidence (0-100%).
-        At distance=0   → 100% confidence
-        At distance=threshold → 50% confidence
-        At distance=1   → 0% confidence
+        Convert cosine distance to match confidence (0–100%).
+          distance = 0          → 100%
+          distance = threshold  → 50%
+          distance ≥ threshold*2→ 0%
         """
         if distance <= 0:
             return 100.0
