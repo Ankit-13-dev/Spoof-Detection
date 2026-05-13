@@ -1,6 +1,6 @@
-# 🔐 Smart Depth Vision – Face Anti-Spoofing & Authentication System
+# 🔐 Spoof Detector – Face Anti-Spoofing & Authentication System
 
-Smart Depth Vision is an advanced **AI-powered authentication and anti-spoofing system** that combines **face recognition, liveness detection, and depth-aware analysis** to provide secure user verification.
+Spoof Detector is an advanced **AI-powered authentication and anti-spoofing system** that combines **face recognition, liveness detection, and depth-aware analysis** to provide secure user verification.
 
 The system allows users to register, enroll facial data, and authenticate using either **credentials or facial recognition**, while actively detecting spoof attempts.
 
